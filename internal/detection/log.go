@@ -1,4 +1,4 @@
-package node
+package detection
 
 import (
 	"fmt"
@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// checkPlayerJoin detecta conexão de jogador - APENAS "joined the game"
-func checkPlayerJoin(logLine string) bool {
+// CheckPlayerJoin detecta conexão de jogador - APENAS "joined the game"
+func CheckPlayerJoin(logLine string) bool {
 	// Ignorar mensagens de chat (formato: <player> mensagem)
 	if strings.Contains(logLine, "<") && strings.Contains(logLine, ">") {
 		return false
@@ -18,8 +18,8 @@ func checkPlayerJoin(logLine string) bool {
 	return joinedPattern.MatchString(logLine)
 }
 
-// checkPlayerLeave detecta desconexão de jogador - APENAS "left the game"
-func checkPlayerLeave(logLine string) bool {
+// CheckPlayerLeave detecta desconexão de jogador - APENAS "left the game"
+func CheckPlayerLeave(logLine string) bool {
 	// Ignorar mensagens de chat (formato: <player> mensagem)
 	if strings.Contains(logLine, "<") && strings.Contains(logLine, ">") {
 		return false
@@ -30,8 +30,8 @@ func checkPlayerLeave(logLine string) bool {
 	return leftPattern.MatchString(logLine)
 }
 
-// parseListCommand parseia resposta do comando "list"
-func parseListCommand(logLine string) (int, bool) {
+// ParseListCommand parseia resposta do comando "list"
+func ParseListCommand(logLine string) (int, bool) {
 	// Formato: "There are 1 of a max of 20 players online: gui400"
 	listPattern := regexp.MustCompile(`(?i)There are (\d+) of a max of \d+ players online`)
 	matches := listPattern.FindStringSubmatch(logLine)
@@ -43,8 +43,8 @@ func parseListCommand(logLine string) (int, bool) {
 	return 0, false
 }
 
-// isServerStarted detecta se o servidor acabou de iniciar
-func isServerStarted(logLine string) bool {
+// IsServerStarted detecta se o servidor acabou de iniciar
+func IsServerStarted(logLine string) bool {
 	return strings.Contains(logLine, "Done (") && strings.Contains(logLine, ")! For help, type")
 }
 

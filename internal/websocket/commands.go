@@ -1,14 +1,13 @@
-package node
+package websocket
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-// sendCommand envia um comando ao servidor via WebSocket
-func sendCommand(conn *websocket.Conn, cmd string) error {
+// SendCommand envia um comando ao servidor via WebSocket
+func SendCommand(conn *websocket.Conn, cmd string) error {
 	commandMessage := Message{
 		Event: "send command",
 		Args:  []string{cmd},
@@ -16,11 +15,10 @@ func sendCommand(conn *websocket.Conn, cmd string) error {
 	return conn.WriteJSON(commandMessage)
 }
 
-// stopServer para o servidor
-func stopServer(conn *websocket.Conn, serverName string) {
-	fmt.Printf("\n[%s] [!] Tempo de inatividade esgotado - parando servidor...\n", serverName)
+// StopServer para o servidor
+func StopServer(conn *websocket.Conn, serverName string) {
 	// Enviar comando stop
-	sendCommand(conn, "stop")
+	SendCommand(conn, "stop")
 	time.Sleep(1 * time.Second)
 	// Alternativa: tentar parar via power state
 	powerMessage := Message{

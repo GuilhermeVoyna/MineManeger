@@ -1,4 +1,4 @@
-package node
+package api
 
 import (
 	"encoding/json"
@@ -16,13 +16,8 @@ type Server struct {
 type ServerListResponse struct {
 	Object string `json:"object"`
 	Data   []struct {
-		Object     string `json:"object"`
-		Attributes struct {
-			ID          string `json:"identifier"`
-			Name        string `json:"name"`
-			Description string `json:"description"`
-			Status      string `json:"status"`
-		} `json:"attributes"`
+		Object     string                 `json:"object"`
+		Attributes map[string]interface{} `json:"attributes"`
 	} `json:"data"`
 }
 
@@ -30,7 +25,6 @@ type ServerListResponse struct {
 func ListServers() ([]Server, error) {
 	userToken := "ptlc_dGSbeYIKJPi9SUUUvCeet2VIkyqMRpfLe39Qar3LW4r"
 	domain := "https://painel.riguila.com.br"
-	// Endpoint correto para listar servidores: /api/client (retorna lista de servidores)
 	url := fmt.Sprintf("%s/api/client", domain)
 
 	client := &http.Client{}
@@ -58,11 +52,17 @@ func ListServers() ([]Server, error) {
 
 	var servers []Server
 	for _, item := range result.Data {
+		attrs := item.Attributes
+		
+		id, _ := attrs["identifier"].(string)
+		name, _ := attrs["name"].(string)
+		description, _ := attrs["description"].(string)
+		
 		servers = append(servers, Server{
-			ID:          item.Attributes.ID,
-			Name:        item.Attributes.Name,
-			Description: item.Attributes.Description,
-			Status:      item.Attributes.Status,
+			ID:          id,
+			Name:        name,
+			Description: description,
+			Status:      "",
 		})
 	}
 
