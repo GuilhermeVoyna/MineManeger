@@ -50,12 +50,12 @@ type ServerTracker struct {
 	LastListCommandTime time.Time // Última vez que o comando list foi enviado
 
 	// Conexão WebSocket
-	conn     *websocket.Conn
+	conn      *websocket.Conn
 	connMutex sync.RWMutex
 
 	// Fake server
-	fakeServer     *fakeserver.FakeServer
-	fakeServerPort int
+	fakeServer      *fakeserver.FakeServer
+	fakeServerPort  int
 	fakeServerMutex sync.RWMutex
 
 	// Mutex para thread-safety
@@ -133,7 +133,7 @@ func (sm *ServerMonitor) checkAllServers() {
 		tracker.mutex.RLock()
 		isOnline := tracker.IsOnline
 		tracker.mutex.RUnlock()
-		
+
 		if !isOnline {
 			// Servidor está offline - garantir que fake server está rodando na mesma porta
 			sm.ensureFakeServerRunning(tracker)
@@ -171,12 +171,12 @@ func (sm *ServerMonitor) printServersStatus() {
 		tracker.mutex.RLock()
 		wsStatus := tracker.APIServerStatus
 		tracker.mutex.RUnlock()
-		
+
 		status := "offline"
 		if isOnline {
 			status = "online"
 		}
-		
+
 		// Mostrar status do WebSocket se disponível
 		if wsStatus != "" {
 			status = fmt.Sprintf("%s (%s)", status, wsStatus)
@@ -378,7 +378,7 @@ func (sm *ServerMonitor) readWebSocketMessages(tracker *ServerTracker) {
 func (sm *ServerMonitor) handleStatusEvent(tracker *ServerTracker, args json.RawMessage) {
 	// Tentar diferentes formatos de parsing
 	var status string
-	
+
 	// Formato 1: string simples
 	if err := json.Unmarshal(args, &status); err == nil && status != "" {
 		sm.updateServerStatus(tracker, status)
@@ -409,10 +409,10 @@ func (sm *ServerMonitor) handleStatusEvent(tracker *ServerTracker, args json.Raw
 // updateServerStatus atualiza o status do servidor
 func (sm *ServerMonitor) updateServerStatus(tracker *ServerTracker, status string) {
 	statusLower := strings.ToLower(status)
-	
+
 	// Determinar se está online baseado no status do WebSocket
 	isOnline := statusLower == "running" || statusLower == "starting"
-	
+
 	tracker.mutex.Lock()
 	wasOnline := tracker.IsOnline
 	tracker.IsOnline = isOnline
@@ -429,7 +429,7 @@ func (sm *ServerMonitor) updateServerStatus(tracker *ServerTracker, status strin
 		sm.checkServerPlayers(tracker, false)
 	} else if !isOnline && wasOnline {
 		// Servidor ficou offline - iniciar fake server (ou reiniciar se necessário)
-		sm.stopFakeServer(tracker) // Garantir que não há fake server antigo
+		sm.stopFakeServer(tracker)         // Garantir que não há fake server antigo
 		time.Sleep(100 * time.Millisecond) // Pequeno delay para garantir que porta está livre
 		sm.startFakeServer(tracker)
 		// Limpar timer e resetar flag
@@ -489,7 +489,7 @@ func (sm *ServerMonitor) processConsoleOutput(tracker *ServerTracker, args json.
 			sm.updatePlayerCount(tracker, count)
 			return
 		}
-		
+
 		// Verificar se jogador entrou - incrementar contagem
 		if detection.CheckPlayerJoin(logLine) {
 			tracker.mutex.Lock()
@@ -505,7 +505,7 @@ func (sm *ServerMonitor) processConsoleOutput(tracker *ServerTracker, args json.
 			fmt.Printf("[%s] Jogadores: %d\n", tracker.ServerName, newCount)
 			return
 		}
-		
+
 		// Verificar se jogador saiu - decrementar contagem
 		if detection.CheckPlayerLeave(logLine) {
 			tracker.mutex.Lock()
@@ -537,7 +537,7 @@ func (sm *ServerMonitor) processConsoleOutput(tracker *ServerTracker, args json.
 				sm.updatePlayerCount(tracker, count)
 				break
 			}
-			
+
 			// Verificar se jogador entrou - incrementar contagem
 			if detection.CheckPlayerJoin(line) {
 				tracker.mutex.Lock()
@@ -552,7 +552,7 @@ func (sm *ServerMonitor) processConsoleOutput(tracker *ServerTracker, args json.
 				fmt.Printf("[%s] Jogadores: %d\n", tracker.ServerName, newCount)
 				break
 			}
-			
+
 			// Verificar se jogador saiu - decrementar contagem
 			if detection.CheckPlayerLeave(line) {
 				tracker.mutex.Lock()
@@ -641,7 +641,7 @@ func (sm *ServerMonitor) checkServerStatusViaAPI(tracker *ServerTracker) {
 			sm.ensureFakeServerRunning(tracker)
 		} else if !isOnline && wasOnline {
 			// Servidor acabou de ficar offline via API - iniciar fake server
-			sm.stopFakeServer(tracker) // Garantir que não há fake server antigo
+			sm.stopFakeServer(tracker)         // Garantir que não há fake server antigo
 			time.Sleep(100 * time.Millisecond) // Pequeno delay para garantir que porta está livre
 			sm.startFakeServer(tracker)
 		} else if isOnline && players == 0 && !tracker.HasTimer {
@@ -699,12 +699,12 @@ func (sm *ServerMonitor) checkTimersTTL() {
 					// Timer expirado - parar servidor (passo 5)
 					fmt.Printf("[%s] Parando servidor (sem jogadores há %s)\n",
 						tracker.ServerName, formatDuration(sm.inactivityTimeout))
-					
+
 					// Marcar timer como não ativo antes de parar
 					tracker.mutex.Lock()
 					tracker.HasTimer = false
 					tracker.mutex.Unlock()
-					
+
 					go sm.stopServer(tracker)
 				}
 			}
@@ -735,14 +735,14 @@ func (sm *ServerMonitor) stopServer(tracker *ServerTracker) {
 	if err := ws.SendCommand(conn, "list"); err == nil {
 		// Aguardar resposta do comando list
 		time.Sleep(2 * time.Second)
-		
+
 		// Verificar novamente a contagem de jogadores
 		tracker.mutex.RLock()
 		currentPlayers := tracker.PlayersOnline
 		tracker.mutex.RUnlock()
-		
+
 		if currentPlayers > 0 {
-			fmt.Printf("[%s] Parada cancelada (%d jogador(es) online)\n", 
+			fmt.Printf("[%s] Parada cancelada (%d jogador(es) online)\n",
 				tracker.ServerName, currentPlayers)
 			// Cancelar timer já que há jogadores
 			tracker.mutex.Lock()
@@ -838,9 +838,9 @@ func (sm *ServerMonitor) startFakeServer(tracker *ServerTracker) {
 	tracker.fakeServerPort = port
 
 	// Criar e iniciar fake server na mesma porta do servidor real
-	message := "The server is being started, please wait and try again in 60 seconds"
-	fakeServer := fakeserver.NewFakeServer(port, message)
-	
+	// Usar a mensagem de login (será usada quando jogador tentar entrar)
+	fakeServer := fakeserver.NewFakeServer(port, fakeserver.LoginMessage)
+
 	if err := fakeServer.Start(); err != nil {
 		fmt.Printf("[%s] [ERRO] Falha ao iniciar servidor falso na porta %d: %v\n", tracker.ServerName, port, err)
 		return
@@ -892,7 +892,7 @@ func (sm *ServerMonitor) ensureFakeServerRunning(tracker *ServerTracker) {
 		tracker.fakeServerMutex.RLock()
 		fakeServer := tracker.fakeServer
 		tracker.fakeServerMutex.RUnlock()
-		
+
 		// Se o fake server existe mas o servidor ainda está offline,
 		// não precisamos fazer nada - o fake server já está rodando
 		// Mas vamos garantir que está na porta correta
@@ -924,17 +924,17 @@ func (sm *ServerMonitor) monitorFakeServerConnections(tracker *ServerTracker) {
 
 	// Aguardar conexão (timeout de 5 minutos)
 	hasConnection := fakeServer.WaitForConnection(5 * time.Minute)
-	
+
 	if !hasConnection {
 		// Nenhuma conexão - não fazer nada, manter fake server rodando
 		return
 	}
 
 	fmt.Printf("[%s] [INFO] Conexão detectada no servidor falso. Aguardando 500ms antes de iniciar servidor real...\n", tracker.ServerName)
-	
+
 	// Aguardar 500ms para dar tempo do usuário ver a mensagem
 	time.Sleep(500 * time.Millisecond)
-	
+
 	// Iniciar servidor real
 	if err := api.StartServer(tracker.ServerID); err != nil {
 		fmt.Printf("[%s] [ERRO] Falha ao iniciar servidor real: %v\n", tracker.ServerName, err)
@@ -967,4 +967,3 @@ func (sm *ServerMonitor) monitorFakeServerConnections(tracker *ServerTracker) {
 		sm.ensureFakeServerRunning(tracker)
 	}
 }
-

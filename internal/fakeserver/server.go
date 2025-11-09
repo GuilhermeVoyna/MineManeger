@@ -3,17 +3,20 @@ package fakeserver
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"time"
 )
 
+// Mensagens são definidas em messages.go para fácil customização
+
 // FakeServer representa um servidor falso do Minecraft
 type FakeServer struct {
-	port         int
-	listener     net.Listener
-	message      string
-	stopChan     chan struct{}
-	connectionChan chan struct{} // Canal para notificar quando há uma conexão
+	port           int
+	listener       net.Listener
+	message        string
+	stopChan       chan struct{}
+	connectionChan chan struct{} // Canal para notificar quando há uma tentativa de LOGIN (não status)
 }
 
 // NewFakeServer cria um novo servidor falso
@@ -85,38 +88,54 @@ func (fs *FakeServer) acceptConnections() {
 }
 
 // handleConnection trata uma conexão de cliente
+// Sempre garante que uma mensagem de desconexão seja enviada antes de fechar
 func (fs *FakeServer) handleConnection(conn net.Conn) {
-	defer conn.Close()
-
-	// Notificar que houve uma conexão (não bloqueante)
-	select {
-	case fs.connectionChan <- struct{}{}:
-	default:
-	}
+	// Sempre garantir que enviamos uma mensagem antes de fechar
+	defer func() {
+		// Aguardar um pouco para garantir que a mensagem foi enviada
+		time.Sleep(200 * time.Millisecond)
+		conn.Close()
+	}()
 
 	// Configurar timeout
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 
-	// Ler handshake packet
+	// Ler packet length primeiro (VarInt)
+	_, err := readVarInt(conn)
+	if err != nil {
+		// Erro ao ler - tentar enviar status response (pode ser status request)
+		fs.sendStatusResponse(conn)
+		return
+	}
+
+	// Ler handshake packet ID
 	packetID, err := readVarInt(conn)
 	if err != nil {
+		// Erro ao ler - tentar enviar status response (pode ser status request)
+		fs.sendStatusResponse(conn)
 		return
 	}
 
 	// Handshake packet ID é 0x00
 	if packetID != 0 {
+		// Packet inválido - tentar enviar status response (pode ser status request)
+		fs.sendStatusResponse(conn)
 		return
 	}
 
 	// Ler protocol version
 	_, err = readVarInt(conn)
 	if err != nil {
+		// Erro ao ler - tentar enviar status response (pode ser status request)
+		fs.sendStatusResponse(conn)
 		return
 	}
 
 	// Ler server address (string)
 	_, err = readString(conn)
 	if err != nil {
+		// Erro ao ler - tentar enviar status response (pode ser status request)
+		fs.sendStatusResponse(conn)
 		return
 	}
 
@@ -124,37 +143,60 @@ func (fs *FakeServer) handleConnection(conn net.Conn) {
 	portBytes := make([]byte, 2)
 	_, err = conn.Read(portBytes)
 	if err != nil {
+		// Erro ao ler - tentar enviar status response (pode ser status request)
+		fs.sendStatusResponse(conn)
 		return
 	}
 
 	// Ler next state
 	nextState, err := readVarInt(conn)
 	if err != nil {
+		// Erro ao ler - tentar enviar status response (pode ser status request)
+		fs.sendStatusResponse(conn)
 		return
 	}
 
-	// Se next state é 1 (status), responder com status
+	// Se next state é 1 (status), responder com status - NÃO notificar (apenas visualização)
 	if nextState == 1 {
+		// Status request - enviar mensagem de status (visualização na tela de multiplayer)
+		log.Printf("[FAKE SERVER] Status request recebido (nextState=1) - enviando mensagem de status: %s", StatusMessage)
 		fs.sendStatusResponse(conn)
-		// Aguardar e responder ping request se houver
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		// Aguardar brevemente e responder ping se houver
+		conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 		fs.handlePingRequest(conn)
-		// Aguardar um pouco antes de fechar
-		time.Sleep(500 * time.Millisecond)
+		// Aguardar para garantir que mensagem foi enviada
+		time.Sleep(200 * time.Millisecond)
+		return
 	} else if nextState == 2 {
-		// Se next state é 2 (login), enviar mensagem de desconexão
+		// Se next state é 2 (login), jogador está tentando ENTRAR no servidor
+		log.Printf("[FAKE SERVER] Login attempt recebido (nextState=2) - enviando mensagem de login: %s", fs.message)
+		// Notificar que houve uma tentativa de login (não bloqueante)
+		select {
+		case fs.connectionChan <- struct{}{}:
+		default:
+		}
+
+		// Enviar mensagem de desconexão (usando mensagem de login - fs.message)
 		fs.sendDisconnectMessage(conn)
-		// Aguardar um pouco para garantir que o cliente recebeu a mensagem
-		time.Sleep(500 * time.Millisecond)
+		// Aguardar para garantir que mensagem foi enviada
+		time.Sleep(200 * time.Millisecond)
+		return
+	} else {
+		// Estado desconhecido - enviar status response (mais seguro para visualização)
+		log.Printf("[FAKE SERVER] Estado desconhecido (nextState=%d) - enviando mensagem de status: %s", nextState, StatusMessage)
+		fs.sendStatusResponse(conn)
+		time.Sleep(200 * time.Millisecond)
+		return
 	}
 }
 
 // sendStatusResponse envia resposta de status com a mensagem personalizada
+// Sempre garante que a mensagem seja enviada completamente
 func (fs *FakeServer) sendStatusResponse(conn net.Conn) {
-	// Criar JSON de resposta
+	// Criar JSON de resposta com mensagem de status (visualização)
 	statusResponse := map[string]interface{}{
 		"version": map[string]interface{}{
-			"name":     "Server Starting",
+			"name":     "Starting server",
 			"protocol": 0,
 		},
 		"players": map[string]interface{}{
@@ -162,13 +204,14 @@ func (fs *FakeServer) sendStatusResponse(conn net.Conn) {
 			"online": 0,
 		},
 		"description": map[string]interface{}{
-			"text": fs.message,
+			"text": StatusMessage,
 		},
 	}
 
 	jsonData, err := json.Marshal(statusResponse)
 	if err != nil {
-		return
+		// Se não conseguir criar JSON, usar mensagem simples com a mensagem de status correta
+		jsonData = []byte(fmt.Sprintf(`{"version":{"name":"Starting server","protocol":0},"players":{"max":0,"online":0},"description":{"text":"%s"}}`, StatusMessage))
 	}
 
 	// Construir packet de status response (Status Response - packet ID 0x00)
@@ -179,13 +222,22 @@ func (fs *FakeServer) sendStatusResponse(conn net.Conn) {
 	// Enviar packet length (VarInt) + packet
 	var lengthBytes []byte
 	lengthBytes = appendVarInt(lengthBytes, int32(len(packet)))
-	
+
 	// Enviar tudo de uma vez
 	fullPacket := append(lengthBytes, packet...)
-	conn.Write(fullPacket)
+
+	// Escrever e garantir que foi enviado
+	_, err = conn.Write(fullPacket)
+	if err == nil {
+		// Tentar fazer flush se a conexão suportar (TCP já faz isso, mas garantimos)
+		if tcpConn, ok := conn.(*net.TCPConn); ok {
+			tcpConn.SetNoDelay(true) // Desabilitar Nagle para envio imediato
+		}
+	}
 }
 
 // sendDisconnectMessage envia mensagem de desconexão (Login Disconnect packet 0x00)
+// Esta função sempre garante que a mensagem seja enviada completamente antes de retornar
 func (fs *FakeServer) sendDisconnectMessage(conn net.Conn) {
 	// Criar JSON de desconexão no formato correto do Minecraft
 	// O formato deve ser um objeto JSON com a mensagem
@@ -195,7 +247,8 @@ func (fs *FakeServer) sendDisconnectMessage(conn net.Conn) {
 
 	jsonData, err := json.Marshal(disconnectMsg)
 	if err != nil {
-		return
+		// Se não conseguir criar JSON, tentar mensagem simples
+		jsonData = []byte(`{"text":"Server is starting, please wait"}`)
 	}
 
 	// Construir packet de desconexão (Login Disconnect - packet ID 0x00)
@@ -206,13 +259,18 @@ func (fs *FakeServer) sendDisconnectMessage(conn net.Conn) {
 	// Enviar packet length (VarInt) + packet
 	var lengthBytes []byte
 	lengthBytes = appendVarInt(lengthBytes, int32(len(packet)))
-	
+
 	// Enviar tudo de uma vez
 	fullPacket := append(lengthBytes, packet...)
-	conn.Write(fullPacket)
-	
-	// Aguardar um pouco para garantir que o cliente processou
-	time.Sleep(100 * time.Millisecond)
+
+	// Escrever e garantir que foi enviado
+	_, err = conn.Write(fullPacket)
+	if err == nil {
+		// Tentar fazer flush se a conexão suportar (TCP já faz isso, mas garantimos)
+		if tcpConn, ok := conn.(*net.TCPConn); ok {
+			tcpConn.SetNoDelay(true) // Desabilitar Nagle para envio imediato
+		}
+	}
 }
 
 // handlePingRequest trata ping request do cliente (Status Request - packet 0x01)
@@ -245,7 +303,7 @@ func (fs *FakeServer) handlePingRequest(conn net.Conn) {
 
 		// Responder com pong (mesmo packet ID e payload)
 		var pongPacket []byte
-		pongPacket = append(pongPacket, 0x01) // Packet ID
+		pongPacket = append(pongPacket, 0x01)       // Packet ID
 		pongPacket = append(pongPacket, payload...) // Payload
 
 		// Enviar packet length + packet
@@ -323,4 +381,3 @@ func appendVarInt(buffer []byte, value int32) []byte {
 		value >>= 7
 	}
 }
-

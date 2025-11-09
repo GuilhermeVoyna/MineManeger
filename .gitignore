@@ -1,0 +1,20 @@
+# Binários compilados
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Arquivos de teste
+*.test
+*.out
+
+# Arquivos temporários
+*.bat
+*.sh
+*.tmp
+
+# Diretórios de build
+bin/
+dist/
+
