@@ -1,0 +1,47 @@
+# Binários
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+main
+test_*
+
+# Arquivos de teste
+test/
+*.test
+*.out
+
+# Arquivos do Go
+vendor/
+# go.mod e go.sum são NECESSÁRIOS para o build - NÃO excluir!
+# *.mod
+# *.sum
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Docker
+# Dockerfile é NECESSÁRIO para o build - NÃO excluir!
+# docker-compose.yml (não é necessário no build, mas pode manter)
+# .dockerignore
+
+# Documentação
+README.md
+*.md
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+

@@ -1,0 +1,60 @@
+services:
+  mine-manager:
+    image: mine-manager:latest
+    container_name: mine-manager
+    restart: unless-stopped
+    # Montar Docker socket para gerenciar containers dos fake servers
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Expor porta da API HTTP do manager (apenas para comunicação interna entre containers)
+    # A porta 8080 é usada apenas para comunicação entre containers na mesma rede Docker
+    # IMPORTANTE: Esta porta NÃO precisa ser exposta externamente, apenas internamente na rede Docker
+    expose:
+      - "8080"
+    environment:
+      # ⚠️ CONFIGURE AS VARIÁVEIS ABAIXO ⚠️
+      
+      # Token de autenticação da API do Pterodactyl
+      # Obtenha em: Painel > Account Settings > API Credentials
+      # ⚠️ VALOR DE TESTE - LEMBRE-SE DE TROCAR! ⚠️
+      - USER_TOKEN=${USER_TOKEN}
+      
+      # Domínio do painel Pterodactyl
+      - DOMAIN=${DOMAIN}
+      
+      # Porta da API HTTP do manager (default: 8080)
+      # Esta porta é usada apenas para comunicação interna entre containers
+      - MANAGER_API_PORT=${MANAGER_API_PORT:-8080}
+      
+      # Nome do container do manager (usado pelos fake servers para se conectar)
+      # Os fake servers usam este nome para se conectar via rede Docker
+      - MANAGER_CONTAINER_NAME=mine-manager
+      
+      # Portas são obtidas automaticamente do Pterodactyl para cada servidor
+      # Não é mais necessário configurar a variável PORTS
+      
+      # Tempo de inatividade antes de parar o servidor (em minutos)
+      # Default: 60 minutos se não especificado
+      - INACTIVITY_TIMEOUT_MINUTES=${INACTIVITY_TIMEOUT_MINUTES:-60}
+      
+      # Timezone (ajuste conforme sua localização)
+      - TZ=${TZ:-America/Sao_Paulo}
+    networks:
+      - mine-network
+    # Healthcheck opcional
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "main"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+
+networks:
+  mine-network:
+    name: mine-network
+    driver: bridge
+    # Rede bridge permite comunicação entre containers usando nomes de serviço
+    # O nome fixo "mine-network" garante que os fake servers possam se conectar ao manager
+    # mesmo quando o docker-compose adiciona prefixo do projeto ao nome da rede
+    # IMPORTANTE: A rede deve existir antes de criar os containers fake server

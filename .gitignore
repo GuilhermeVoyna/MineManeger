@@ -5,6 +5,12 @@
 *.so
 *.dylib
 
+# Build
+build/
+main
+mine-manager
+mine-manager-linux
+
 # Arquivos de teste
 *.test
 *.out
@@ -17,4 +23,9 @@
 # Diretórios de build
 bin/
 dist/
+
+# Arquivos de ambiente
+.env
+# Manter .env.example para referência
+!.env.example
 

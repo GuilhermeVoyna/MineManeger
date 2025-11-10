@@ -16,7 +16,8 @@ type FakeServer struct {
 	listener       net.Listener
 	message        string
 	stopChan       chan struct{}
-	connectionChan chan struct{} // Canal para notificar quando há uma tentativa de LOGIN (não status)
+	connectionChan chan struct{}  // Canal para notificar quando há uma tentativa de LOGIN (não status)
+	managerClient  *ManagerClient // Cliente para API do manager
 }
 
 // NewFakeServer cria um novo servidor falso
@@ -26,6 +27,7 @@ func NewFakeServer(port int, message string) *FakeServer {
 		message:        message,
 		stopChan:       make(chan struct{}),
 		connectionChan: make(chan struct{}, 1),
+		managerClient:  NewManagerClient(),
 	}
 }
 
@@ -88,8 +90,10 @@ func (fs *FakeServer) acceptConnections() {
 }
 
 // handleConnection trata uma conexão de cliente
-// Sempre garante que uma mensagem de desconexão seja enviada antes de fechar
+// APENAS notifica a API quando recebe login attempt (nextState=2)
+// Status requests (nextState=1) NÃO iniciam o servidor real
 func (fs *FakeServer) handleConnection(conn net.Conn) {
+
 	// Sempre garantir que enviamos uma mensagem antes de fechar
 	defer func() {
 		// Aguardar um pouco para garantir que a mensagem foi enviada
@@ -100,10 +104,36 @@ func (fs *FakeServer) handleConnection(conn net.Conn) {
 	// Configurar timeout
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 
+	log.Printf("[FAKE SERVER] ===== NOVA CONEXÃO RECEBIDA =====")
+	log.Printf("[FAKE SERVER] Verificando tipo de conexão (apenas login attempt inicia servidor)")
+
+	// Função auxiliar para notificar API de forma consistente
+	// APENAS chamada quando nextState == 2 (login attempt)
+	notifyAPI := func(reason string) {
+		log.Printf("[FAKE SERVER] [INFO] ===== NOTIFICANDO API PARA INICIAR SERVIDOR REAL =====")
+		log.Printf("[FAKE SERVER] [INFO] Razão: %s", reason)
+		time.Sleep(500 * time.Millisecond)
+		if err := fs.managerClient.RequestRemoveContainer(); err != nil {
+			log.Printf("[FAKE SERVER] [ERRO] Falha ao notificar API: %v", err)
+			// Tentar novamente após 1 segundo
+			time.Sleep(1 * time.Second)
+			if err := fs.managerClient.RequestRemoveContainer(); err != nil {
+				log.Printf("[FAKE SERVER] [ERRO] Falha novamente ao notificar API: %v", err)
+			} else {
+				log.Printf("[FAKE SERVER] ✓ API notificada com sucesso na segunda tentativa")
+			}
+		} else {
+			log.Printf("[FAKE SERVER] ✓✓✓ API NOTIFICADA COM SUCESSO ✓✓✓")
+			log.Printf("[FAKE SERVER] ✓ Servidor real será iniciado")
+		}
+	}
+
 	// Ler packet length primeiro (VarInt)
 	_, err := readVarInt(conn)
 	if err != nil {
-		// Erro ao ler - tentar enviar status response (pode ser status request)
+		// Erro ao ler - NÃO iniciar servidor (erro de protocolo)
+		log.Printf("[FAKE SERVER] [INFO] Erro ao ler packet length: %v", err)
+		log.Printf("[FAKE SERVER] Erro de protocolo - servidor real NÃO será iniciado")
 		fs.sendStatusResponse(conn)
 		return
 	}
@@ -111,81 +141,91 @@ func (fs *FakeServer) handleConnection(conn net.Conn) {
 	// Ler handshake packet ID
 	packetID, err := readVarInt(conn)
 	if err != nil {
-		// Erro ao ler - tentar enviar status response (pode ser status request)
+		// Erro ao ler - NÃO iniciar servidor (erro de protocolo)
+		log.Printf("[FAKE SERVER] [INFO] Erro ao ler packet ID: %v", err)
+		log.Printf("[FAKE SERVER] Erro de protocolo - servidor real NÃO será iniciado")
 		fs.sendStatusResponse(conn)
 		return
 	}
 
-	// Handshake packet ID é 0x00
+	// Handshake packet ID é 0x00 (mas aceitar qualquer coisa)
 	if packetID != 0 {
-		// Packet inválido - tentar enviar status response (pode ser status request)
-		fs.sendStatusResponse(conn)
-		return
+		// Packet pode ser de outra versão ou formato - aceitar mesmo assim
+		log.Printf("[FAKE SERVER] [AVISO] Packet ID diferente de 0 (recebido: %d) - aceitando mesmo assim", packetID)
+		// Continuar processamento mesmo com packet ID diferente
 	}
 
-	// Ler protocol version
+	// Ler protocol version (aceitar mesmo com erro)
 	_, err = readVarInt(conn)
 	if err != nil {
-		// Erro ao ler - tentar enviar status response (pode ser status request)
-		fs.sendStatusResponse(conn)
-		return
+		log.Printf("[FAKE SERVER] [AVISO] Erro ao ler protocol version: %v - continuando mesmo assim", err)
+		// Continuar - precisamos ler nextState para determinar se é login attempt
 	}
 
-	// Ler server address (string)
+	// Ler server address (string) - aceitar mesmo com erro
 	_, err = readString(conn)
 	if err != nil {
-		// Erro ao ler - tentar enviar status response (pode ser status request)
-		fs.sendStatusResponse(conn)
-		return
+		log.Printf("[FAKE SERVER] [AVISO] Erro ao ler server address: %v - continuando mesmo assim", err)
+		// Continuar - precisamos ler nextState para determinar se é login attempt
 	}
 
-	// Ler server port (unsigned short)
+	// Ler server port (unsigned short) - aceitar mesmo com erro
 	portBytes := make([]byte, 2)
 	_, err = conn.Read(portBytes)
 	if err != nil {
-		// Erro ao ler - tentar enviar status response (pode ser status request)
-		fs.sendStatusResponse(conn)
-		return
+		log.Printf("[FAKE SERVER] [AVISO] Erro ao ler server port: %v - continuando mesmo assim", err)
+		// Continuar - precisamos ler nextState para determinar se é login attempt
 	}
 
-	// Ler next state
+	// Ler next state (aceitar qualquer valor, mesmo com erro)
 	nextState, err := readVarInt(conn)
 	if err != nil {
-		// Erro ao ler - tentar enviar status response (pode ser status request)
+		// Erro ao ler nextState - NÃO iniciar servidor (erro de protocolo)
+		log.Printf("[FAKE SERVER] [INFO] Erro ao ler nextState: %v", err)
+		log.Printf("[FAKE SERVER] Erro de protocolo - servidor real NÃO será iniciado")
 		fs.sendStatusResponse(conn)
 		return
 	}
 
-	// Se next state é 1 (status), responder com status - NÃO notificar (apenas visualização)
+	// Log do nextState para debug
+	log.Printf("[FAKE SERVER] Handshake recebido - nextState: %d (1=status, 2=login)", nextState)
+
+	// Processar conforme o tipo de requisição
+	// APENAS login attempt (nextState=2) deve iniciar o servidor real
+	log.Printf("[FAKE SERVER] ===== CONEXÃO PROCESSADA (nextState=%d) =====", nextState)
+
 	if nextState == 1 {
-		// Status request - enviar mensagem de status (visualização na tela de multiplayer)
-		log.Printf("[FAKE SERVER] Status request recebido (nextState=1) - enviando mensagem de status: %s", StatusMessage)
+		// Status request - apenas visualização na tela de multiplayer
+		// NÃO iniciar servidor real, apenas responder status
+		log.Printf("[FAKE SERVER] Status request (nextState=1) - enviando status response")
+		log.Printf("[FAKE SERVER] Status request NÃO inicia servidor real (apenas visualização)")
 		fs.sendStatusResponse(conn)
 		// Aguardar brevemente e responder ping se houver
 		conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 		fs.handlePingRequest(conn)
-		// Aguardar para garantir que mensagem foi enviada
-		time.Sleep(200 * time.Millisecond)
+		// NÃO notificar API - status request não deve iniciar servidor
+		log.Printf("[FAKE SERVER] Status request processado. Servidor real NÃO será iniciado.")
 		return
 	} else if nextState == 2 {
-		// Se next state é 2 (login), jogador está tentando ENTRAR no servidor
-		log.Printf("[FAKE SERVER] Login attempt recebido (nextState=2) - enviando mensagem de login: %s", fs.message)
-		// Notificar que houve uma tentativa de login (não bloqueante)
-		select {
-		case fs.connectionChan <- struct{}{}:
-		default:
-		}
-
-		// Enviar mensagem de desconexão (usando mensagem de login - fs.message)
+		// Login attempt - jogador tentou se conectar
+		// ESTE é o único caso que deve iniciar o servidor real
+		log.Printf("[FAKE SERVER] ===== LOGIN ATTEMPT DETECTADO (nextState=2) =====")
+		log.Printf("[FAKE SERVER] Login attempt - enviando mensagem de desconexão: %s", fs.message)
 		fs.sendDisconnectMessage(conn)
-		// Aguardar para garantir que mensagem foi enviada
-		time.Sleep(200 * time.Millisecond)
+		log.Printf("[FAKE SERVER] Mensagem de desconexão enviada ao cliente")
+
+		// NOTIFICAR API para iniciar servidor real (APENAS para login attempt)
+		log.Printf("[FAKE SERVER] ===== NOTIFICANDO API PARA INICIAR SERVIDOR REAL =====")
+		notifyAPI("login attempt detectado - jogador tentou conectar")
+
+		log.Printf("[FAKE SERVER] Login attempt processado. Servidor real será iniciado.")
 		return
 	} else {
-		// Estado desconhecido - enviar status response (mais seguro para visualização)
-		log.Printf("[FAKE SERVER] Estado desconhecido (nextState=%d) - enviando mensagem de status: %s", nextState, StatusMessage)
+		// Estado desconhecido - enviar status response mas NÃO iniciar servidor
+		log.Printf("[FAKE SERVER] Estado desconhecido (nextState=%d) - enviando status response", nextState)
 		fs.sendStatusResponse(conn)
-		time.Sleep(200 * time.Millisecond)
+		// NÃO notificar API - estado desconhecido não deve iniciar servidor
+		log.Printf("[FAKE SERVER] Estado desconhecido processado. Servidor real NÃO será iniciado.")
 		return
 	}
 }

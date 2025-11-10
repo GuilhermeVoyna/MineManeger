@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"maneger/internal/config"
 )
 
 type WebSocketResponse struct {
@@ -15,8 +17,8 @@ type WebSocketResponse struct {
 
 // GetJwt obtém token JWT e URL do WebSocket para um servidor específico
 func GetJwt(serverId string) (WebSocketResponse, error) {
-	userToken := "ptlc_dGSbeYIKJPi9SUUUvCeet2VIkyqMRpfLe39Qar3LW4r"
-	domain := "https://painel.riguila.com.br"
+	userToken := config.GetUserToken()
+	domain := config.GetDomain()
 	url := fmt.Sprintf("%s/api/client/servers/%s/websocket", domain, serverId)
 
 	client := &http.Client{}

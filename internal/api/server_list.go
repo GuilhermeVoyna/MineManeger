@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"maneger/internal/config"
 )
 
 type Server struct {
@@ -23,8 +25,8 @@ type ServerListResponse struct {
 
 // ListServers lista todos os servidores disponíveis
 func ListServers() ([]Server, error) {
-	userToken := "ptlc_dGSbeYIKJPi9SUUUvCeet2VIkyqMRpfLe39Qar3LW4r"
-	domain := "https://painel.riguila.com.br"
+	userToken := config.GetUserToken()
+	domain := config.GetDomain()
 	url := fmt.Sprintf("%s/api/client", domain)
 
 	client := &http.Client{}

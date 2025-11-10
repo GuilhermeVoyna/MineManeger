@@ -15,6 +15,15 @@ func SendCommand(conn *websocket.Conn, cmd string) error {
 	return conn.WriteJSON(commandMessage)
 }
 
+// StartServer inicia o servidor via WebSocket
+func StartServer(conn *websocket.Conn) error {
+	powerMessage := Message{
+		Event: "set state",
+		Args:  []string{"start"},
+	}
+	return conn.WriteJSON(powerMessage)
+}
+
 // StopServer para o servidor
 func StopServer(conn *websocket.Conn, serverName string) {
 	// Enviar comando stop

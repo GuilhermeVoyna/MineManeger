@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"maneger/internal/config"
 )
 
 // GetServerStatus obtém o status atual do servidor via Client API
 func GetServerStatus(serverID string) (string, error) {
-	userToken := "ptlc_dGSbeYIKJPi9SUUUvCeet2VIkyqMRpfLe39Qar3LW4r"
-	domain := "https://painel.riguila.com.br"
+	userToken := config.GetUserToken()
+	domain := config.GetDomain()
 	url := fmt.Sprintf("%s/api/client/servers/%s", domain, serverID)
 
 	client := &http.Client{}
